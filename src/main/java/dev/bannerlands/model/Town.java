@@ -13,6 +13,7 @@ public final class Town {
     private final UUID owner;
     private volatile long nationId;
     private volatile boolean friendlyFire;
+    private volatile int bonusClaims;
     private final long createdAt;
     private final int[] perms = new int[Tier.values().length];
     private final Map<UUID, Role> members = new ConcurrentHashMap<>();
@@ -37,6 +38,9 @@ public final class Town {
     public void setNationId(long id) { this.nationId = id; }
     public boolean isFriendlyFire() { return friendlyFire; }
     public void setFriendlyFire(boolean b) { this.friendlyFire = b; }
+    /** Extra claimable chunks this town bought with /town bonus. */
+    public int getBonusClaims() { return bonusClaims; }
+    public void setBonusClaims(int n) { this.bonusClaims = n; }
     public long getCreatedAt() { return createdAt; }
     public Map<UUID, Role> getMembers() { return members; }
     public Set<UUID> getTrusted() { return trusted; }

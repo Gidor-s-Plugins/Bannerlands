@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 public final class TownCommand implements TabExecutor {
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
     private static final List<String> SUBS = List.of("map","create", "delete", "claim", "unclaim", "info", "add", "join", "leave",
-            "kick", "rank", "trust", "untrust", "perms", "desc", "promo", "friendlyfire", "unlock", "invite", "accept",
+            "kick", "rank", "trust", "untrust", "perms", "desc", "promo", "friendlyfire", "unlock", "bonus", "invite", "accept",
             "deny", "invites", "help");
 
     private final BannerlandsPlugin plugin;
@@ -64,6 +64,7 @@ public final class TownCommand implements TabExecutor {
             case "promo" -> text(p, a, false);
             case "friendlyfire", "ff" -> friendlyFire(p);
             case "unlock" -> unlock(p, a);
+            case "bonus" -> bonus(p, a);
             case "invite" -> invite(p, a);
             case "accept" -> respond(p, a, true);
             case "deny" -> respond(p, a, false);
@@ -126,7 +127,7 @@ public final class TownCommand implements TabExecutor {
         for (String l : new String[]{
                 "map" ,"create <name>", "claim / unclaim", "info [town]", "add <player> / join <town> / leave / kick <player>",
                 "rank <player> <mayor|member>", "trust|untrust <player>", "perms  (opens the GUI)",
-                "desc <text> / promo <text>", "friendlyfire", "unlock", "invite <town>  (nation invite)",
+                "desc <text> / promo <text>", "friendlyfire", "unlock", "bonus <count>", "invite <town>  (nation invite)",
                 "invites / accept <id> / deny <id>", "delete confirm"}) {
             p.sendMessage(Msg.raw("town.town", Msg.p("l", l)));
         }
@@ -419,6 +420,36 @@ public final class TownCommand implements TabExecutor {
         Msg.send(p, "town.friendly_fire_inside_is", Msg.p("t", t.getName()), Msg.p("v", Lang.onOff(t.isFriendlyFire())));
     }
     
+    /** /town bonus [count]: buy extra claimable chunks for the town (price and maximum come from the config). */
+    private void bonus(Player p, String[] a) {
+        FileConfiguration cfg = plugin.getConfig();
+        int max = cfg.getInt("towns.bonus-claims.max", 0);
+        double price = cfg.getDouble("towns.bonus-claims.price", 0);
+        if (max <= 0) { Msg.send(p, "town.bonus_disabled"); return; }
+        Town t = needRole(p, Role.ASSISTANT);
+        if (t == null) return;
+        int have = t.getBonusClaims();
+        if (a.length < 2) {
+            Msg.send(p, "town.bonus_status", Msg.p("have", have), Msg.p("max", max), Msg.p("price", plugin.economy().format(price)));
+            return;
+        }
+        int count;
+        try { count = Integer.parseInt(a[1]); } catch (NumberFormatException ex) { usage(p, "/town bonus <count>"); return; }
+        if (count < 1) { usage(p, "/town bonus <count>"); return; }
+        if (have + count > max) {
+            Msg.send(p, "town.bonus_limit", Msg.p("max", max), Msg.p("have", have), Msg.p("left", max - have));
+            return;
+        }
+        double cost = price * count;
+        if (!plugin.economy().withdraw(p, cost)) {
+            Msg.send(p, "town.bonus_need_money", Msg.p("m", plugin.economy().format(cost)), Msg.p("c", count));
+            return;
+        }
+        t.setBonusClaims(have + count);
+        data.saveTown(t);
+        Msg.send(p, "town.bonus_bought", Msg.p("c", count), Msg.p("m", plugin.economy().format(cost)), Msg.p("limit", data.claimLimit(t)));
+    }
+
     private void unlock(Player p, String[] a) {
         FileConfiguration cfg = plugin.getConfig();
         PlayerProfile pr = data.profile(p.getUniqueId(), p.getName());

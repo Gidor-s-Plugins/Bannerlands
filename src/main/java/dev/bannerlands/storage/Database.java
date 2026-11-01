@@ -74,6 +74,10 @@ public final class Database {
             for (String stmt : clean.toString().split(";")) {
                 if (!stmt.isBlank()) st.execute(stmt.trim());
             }
+            // Migration for databases created before bonus chunks existed (fails harmlessly if the column is already there)
+            try (Statement alter = con.createStatement()) {
+                alter.execute("ALTER TABLE towns ADD COLUMN bonus_claims INT NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) { /* column already exists */ }
         }
     }
 

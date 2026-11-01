@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS towns (
   perm_member INT NOT NULL DEFAULT 15,
   perm_ally INT NOT NULL DEFAULT 8,
   perm_enemy INT NOT NULL DEFAULT 0,
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  bonus_claims INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS town_members (

@@ -21,7 +21,10 @@ towns:
   claim-cost: 500.0
   unclaim-refund: 0.0
   base-claims: 25            # every town starts with this
-  max-claims: 65             # hard cap on claims, no bonus can go past this
+  max-claims: 65             # hard cap on claims from base/member/nation bonuses (bought bonus chunks are added on top)
+  bonus-claims:
+    max: 20                  # most bonus chunks one town can buy with /town bonus (0 = feature off)
+    price: 1000.0            # price PER bonus chunk
   claim-on-create: true      # first chunk is claimed (free) when the town is created
   require-adjacent: true     # new chunks must touch an existing chunk of the town
   allow-claim-over-regions: false 

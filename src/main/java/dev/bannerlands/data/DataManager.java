@@ -43,6 +43,7 @@ public final class DataManager {
             t.setPromo(rs.getString("promo"));
             t.setNationId(rs.getLong("nation_id"));
             t.setFriendlyFire(rs.getInt("friendly_fire") == 1);
+            t.setBonusClaims(rs.getInt("bonus_claims"));
             for (Tier tier : Tier.values()) t.setRawPerms(tier, rs.getInt("perm_" + tier.name().toLowerCase(Locale.ROOT)));
             towns.put(t.getId(), t);
             townNames.put(t.getName().toLowerCase(Locale.ROOT), t);
@@ -113,13 +114,14 @@ public final class DataManager {
         return n;
     }
 
-    /** Max chunks a town may own: base limit, plus the nation bonus if it is in a nation. */
+    /** Max chunks a town may own: base limit (+ nation bonus), capped, plus the bonus chunks the town bought. */
     public int claimLimit(Town t) {
         var cfg = plugin.getConfig();
         int limit = cfg.getInt("towns.base-claims", 30);
         limit += t.getMembers().size() * cfg.getInt("towns.claims-per-member", 0);
         if (t.getNationId() != 0) limit += cfg.getInt("nations.claim-bonus", 10);
-        return Math.min(limit, cfg.getInt("towns.max-claims", 64));
+        // bought bonus chunks are added on top of the capped free limit
+        return Math.min(limit, cfg.getInt("towns.max-claims", 64)) + t.getBonusClaims();
     }
 
     public List<ClaimedChunk> chunksOf(long townId) {
@@ -214,10 +216,10 @@ public final class DataManager {
     // ------------------------------------------------------------------ persistence helpers
 
     public void saveTown(Town t) {
-        db.update("REPLACE INTO towns (id,name,description,promo,owner,nation_id,friendly_fire,perm_neutral,perm_trusted,perm_member,perm_ally,perm_enemy,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.update("REPLACE INTO towns (id,name,description,promo,owner,nation_id,friendly_fire,perm_neutral,perm_trusted,perm_member,perm_ally,perm_enemy,created_at,bonus_claims) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 t.getId(), t.getName(), t.getDescription(), t.getPromo(), t.getOwner(), t.getNationId(), t.isFriendlyFire(),
                 t.rawPerms(Tier.NEUTRAL), t.rawPerms(Tier.TRUSTED), t.rawPerms(Tier.MEMBER), t.rawPerms(Tier.ALLY), t.rawPerms(Tier.ENEMY),
-                t.getCreatedAt());
+                t.getCreatedAt(), t.getBonusClaims());
     }
 
     public void saveNation(Nation n) {

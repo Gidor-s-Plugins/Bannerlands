@@ -102,6 +102,11 @@ town:
   unlock_req_missing: '<red> - <m>'
   unlock_item_ok: '<green> - <a>x <i>'
   unlock_item_missing: '<red> - <a>x <i>'
+  bonus_disabled: '<red>A bónusz chunkok vásárlása ki van kapcsolva ezen a szerveren.'
+  bonus_status: '<gray>Bónusz chunkok: <white><have>/<max> <gray>| Ár: <white><price> <gray>darabonként. Vásárlás: <yellow>/town bonus <count></yellow>'
+  bonus_limit: '<red>A városodnak legfeljebb <yellow><max></yellow> bónusz chunkja lehet (<have> megvan, <left> maradt).'
+  bonus_need_money: '<red><yellow><m></yellow> szükséges <c> bónusz chunk megvásárlásához.'
+  bonus_bought: '<green>Megvettél <yellow><c></yellow> bónusz chunkot <yellow><m></yellow> áron. A városod mostantól legfeljebb <yellow><limit></yellow> chunkot foglalhat le.'
   invite_sent: '<green>Meghívó elküldve ennek: <yellow><t></yellow>.'
   invite_queued: '<green>A(z) <yellow><t></yellow> tulajdonosa offline - a meghívó bejelentkezéskor lesz kézbesítve.'
 

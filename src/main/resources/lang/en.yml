@@ -103,6 +103,11 @@ town:
   unlock_req_missing: '<red> - <m>'
   unlock_item_ok: '<green> - <a>x <i>'
   unlock_item_missing: '<red> - <a>x <i>'
+  bonus_disabled: '<red>Buying bonus chunks is disabled on this server.'
+  bonus_status: '<gray>Bonus chunks: <white><have>/<max> <gray>| Price: <white><price> <gray>each. Buy with <yellow>/town bonus <count></yellow>'
+  bonus_limit: '<red>Your town can have at most <yellow><max></yellow> bonus chunks (<have> owned, <left> left).'
+  bonus_need_money: '<red>You need <yellow><m></yellow> to buy <c> bonus chunk(s).'
+  bonus_bought: '<green>Bought <yellow><c></yellow> bonus chunk(s) for <yellow><m></yellow>. Your town can now claim up to <yellow><limit></yellow> chunks.'
   invite_sent: '<green>Invitation sent to <yellow><t></yellow>.'
   invite_queued: '<green>The owner of <yellow><t></yellow> is offline - the invitation will be delivered when they log in.'
 
