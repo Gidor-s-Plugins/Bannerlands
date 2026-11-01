@@ -181,7 +181,8 @@ prefix: '<dark_gray>[<gold>Bannerlands</gold>]</dark_gray> '
 
 map:
   header: '<gold>--- Térkép [<x>, <z>] ---'
-  legend: '<green>■ saját <aqua>■ megbízható <yellow>■ szövetséges <red>■ ellenség <white>■ egyéb <light_purple>■ ostrom/fosztogatás <dark_gray>■ vadon <gold>■ te'  towns: '<gray>Városok: <white><t>'
+  legend: '<green>■ saját <aqua>■ megbízható <yellow>■ szövetséges <red>■ ellenség <white>■ egyéb <light_purple>■ ostrom/fosztogatás <dark_gray>■ vadon <gold>■ te'
+  towns: '<gray>Városok: <white><t>'
 
 common:
   reloaded: '<green>A konfiguráció és a nyelvi fájlok újratöltve.'
