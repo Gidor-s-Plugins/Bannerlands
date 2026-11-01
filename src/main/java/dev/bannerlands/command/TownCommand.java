@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 
 public final class TownCommand implements TabExecutor {
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
-    private static final List<String> SUBS = List.of("create", "delete", "claim", "unclaim", "info", "add", "join", "leave",
+    private static final List<String> SUBS = List.of("map","create", "delete", "claim", "unclaim", "info", "add", "join", "leave",
             "kick", "rank", "trust", "untrust", "perms", "desc", "promo", "friendlyfire", "unlock", "invite", "accept",
             "deny", "invites", "help");
 
@@ -124,7 +124,7 @@ public final class TownCommand implements TabExecutor {
     private void help(Player p) {
         Msg.send(p, "town.town_commands");
         for (String l : new String[]{
-                "create <name>", "claim / unclaim", "info [town]", "add <player> / join <town> / leave / kick <player>",
+                "map" ,"create <name>", "claim / unclaim", "info [town]", "add <player> / join <town> / leave / kick <player>",
                 "rank <player> <mayor|member>", "trust|untrust <player>", "perms  (opens the GUI)",
                 "desc <text> / promo <text>", "friendlyfire", "unlock", "invite <town>  (nation invite)",
                 "invites / accept <id> / deny <id>", "delete confirm"}) {
@@ -418,7 +418,7 @@ public final class TownCommand implements TabExecutor {
         data.saveTown(t);
         Msg.send(p, "town.friendly_fire_inside_is", Msg.p("t", t.getName()), Msg.p("v", Lang.onOff(t.isFriendlyFire())));
     }
-
+    
     private void unlock(Player p, String[] a) {
         FileConfiguration cfg = plugin.getConfig();
         PlayerProfile pr = data.profile(p.getUniqueId(), p.getName());
@@ -426,6 +426,7 @@ public final class TownCommand implements TabExecutor {
         if (next > cfg.getInt("towns.max-owned", 3)) { Msg.send(p, "town.you_already_unlocked_every"); return; }
         ConfigurationSection s = cfg.getConfigurationSection("progression.slots." + next);
         if (s == null) { Msg.send(p, "town.slot_isn_t_configured", Msg.p("n", next)); return; }
+        
         double money = s.getDouble("money", 0);
         Map<Material, Integer> req = new LinkedHashMap<>();
         for (String entry : s.getStringList("items")) {
@@ -434,22 +435,63 @@ public final class TownCommand implements TabExecutor {
             if (m == null) continue;
             req.merge(m, parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1, Integer::sum);
         }
+        
         boolean confirm = a.length > 1 && a[1].equalsIgnoreCase("confirm");
         boolean ok = plugin.economy().has(p, money);
+        
         Msg.send(p, "town.town_slot_requires", Msg.p("n", next));
         p.sendMessage(Msg.raw(ok ? "town.unlock_req_ok" : "town.unlock_req_missing", Msg.p("m", plugin.economy().format(money))));
+        
         for (Map.Entry<Material, Integer> e : req.entrySet()) {
-            boolean has = p.getInventory().containsAtLeast(new ItemStack(e.getKey()), e.getValue());
+            boolean has = hasEnoughItems(p, e.getKey(), e.getValue());
             ok &= has;
             p.sendMessage(Msg.raw(has ? "town.unlock_item_ok" : "town.unlock_item_missing", Msg.p("a", e.getValue()), Msg.p("i", e.getKey().name())));
         }
+
         if (!confirm) { Msg.send(p, "town.hold_the_items_in"); return; }
         if (!ok) { Msg.send(p, "town.you_don_t_meet"); return; }
         if (!plugin.economy().withdraw(p, money)) { Msg.send(p, "town.payment_failed"); return; }
-        for (Map.Entry<Material, Integer> e : req.entrySet()) p.getInventory().removeItem(new ItemStack(e.getKey(), e.getValue()));
+
+        // Remove the exact required items safely
+        for (Map.Entry<Material, Integer> e : req.entrySet()) {
+            removeItems(p, e.getKey(), e.getValue());
+        }
+
         pr.setTownSlots(next);
         data.saveProfile(pr);
         Msg.send(p, "town.town_slot_unlocked_you", Msg.p("n", next));
+    }
+
+    private boolean hasEnoughItems(Player p, Material mat, int amount) {
+        int count = 0;
+        for (ItemStack item : p.getInventory().getContents()) {
+            if (item != null && item.getType() == mat) {
+                count += item.getAmount();
+                if (count >= amount) return true;
+            }
+        }
+        return count >= amount;
+    }
+
+    private void removeItems(Player p, Material mat, int amount) {
+        ItemStack[] contents = p.getInventory().getContents();
+        int toRemove = amount;
+
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (item == null || item.getType() != mat) continue;
+
+            int currentAmount = item.getAmount();
+            if (currentAmount <= toRemove) {
+                toRemove -= currentAmount;
+                p.getInventory().setItem(i, null);
+            } else {
+                item.setAmount(currentAmount - toRemove);
+                toRemove = 0;
+            }
+
+            if (toRemove <= 0) break;
+        }
     }
 
     private void invite(Player p, String[] a) {
