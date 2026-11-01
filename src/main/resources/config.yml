@@ -1,0 +1,63 @@
+database:
+  type: sqlite            # sqlite | mysql
+  sqlite-file: realms.db
+  mysql:
+    host: localhost
+    port: 3306
+    database: realms
+    user: root
+    password: ""
+    pool-size: 8
+
+# Worlds in which chunks can be claimed
+worlds:
+  - world
+
+towns:
+  max-owned: 3
+  claims-per-member: 0      # the mayor counts as one member, 0 = off
+  starting-slots: 1          # town slots a new player starts with
+  create-cost: 2500.0
+  claim-cost: 500.0
+  unclaim-refund: 0.0
+  base-claims: 25            # every town starts with this
+  max-claims: 65             # hard cap on claims, no bonus can go past this
+  claim-on-create: true      # first chunk is claimed (free) when the town is created
+  require-adjacent: true     # new chunks must touch an existing chunk of the town
+  allow-claim-over-regions: false 
+
+# Unlocking extra town slots: /town unlock  (money + items handed in from the inventory)
+progression:
+  slots:
+    2:
+      money: 15000.0
+      items: ["SUGAR_CANE:128", "IRON_INGOT:64"] # this will be taken from the inventory of the creator (can be empty)
+    3:
+      money: 50000.0
+      items: ["SUGAR_CANE:512", "IRON_INGOT:256", "DIAMOND:16"] # this will be taken from the inventory of the creator (can be empty)
+
+nations:
+  create-cost: 5000.0
+  invite-expire-hours: 72
+  claim-bonus: 10        # extra chunks every town in a nation may claim
+
+worldguard:
+  priority: 10
+
+flagwar:
+  capture-radius: 8              # blocks around the flag
+  capture-seconds: 300           # time for ONE attacker to capture; more attackers = faster
+  max-attacker-multiplier: 4
+  time-limit-minutes: 25
+  idle-abandon-seconds: 60       # siege is dropped if progress is 0 and nobody is at the flag
+  min-defenders-online: 1
+  cooldown-minutes: 60           # per chunk, after any siege
+  max-sieges-per-nation: 3
+  on-capture: RAID               # RAID | TRANSFER | UNCLAIM
+  raid-minutes: 15
+  banner: RED_BANNER
+
+# Language file to use (lang/<code>.yml in the plugin folder)
+language: en
+
+ver: 1 # dont change this

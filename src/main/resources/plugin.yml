@@ -1,0 +1,23 @@
+name: Bannerlands
+version: ${project.version}
+main: dev.bannerlands.BannerlandsPlugin
+api-version: '1.20'
+description: Simple towns, nations and chunk-by-chunk flag wars
+depend: [Vault, WorldGuard]
+libraries:
+  - com.zaxxer:HikariCP:5.1.0
+  - org.xerial:sqlite-jdbc:3.45.1.0
+  - com.mysql:mysql-connector-j:8.3.0
+commands:
+  town:
+    description: Town management
+    aliases: [t]
+    usage: /town help
+  nation:
+    description: Nation management, diplomacy and flag wars
+    aliases: [n]
+    usage: /nation help
+permissions:
+  bannerlands.admin:
+    description: Bypass all claim protection
+    default: op
