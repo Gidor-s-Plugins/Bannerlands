@@ -36,6 +36,5 @@ formatting is MiniMessage. Missing keys fall back to English. `/town reload` (ne
   TRANSFER (chunk goes to the attacking town) or UNCLAIM.
 
 ## Known limits / next steps
-* Not compiled in the build sandbox (no Maven/Paper there) – run `mvn package` and fix any version drift.
 * A server crash during a siege leaves the banner block behind (it is restored on clean shutdown).
 * Animals/armor stands/pistons/fluid flow across claim borders are not covered yet.
