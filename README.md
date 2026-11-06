@@ -11,7 +11,7 @@ driver are downloaded by Paper itself (`libraries:` in plugin.yml), so the jar s
 Edit `plugins/Bannerlands/config.yml` (worlds, prices, progression items, flag war tuning).
 
 ## Commands
-/town  map | create | claim | unclaim | info | add | join | leave | kick | rank | trust | untrust | perms (GUI)
+/town  map | create | claim | unclaim | info | add | bonus | join | leave | kick | rank | trust | untrust | perms (GUI)
        desc | promo | friendlyfire | unlock | invite <town> | invites | accept <id> | deny <id> | delete confirm
 /nation create | info | ally | enemy | war | peace | friendlyfire | leave | kick | disband | flag [cancel]
 
