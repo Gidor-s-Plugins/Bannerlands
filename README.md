@@ -9,6 +9,8 @@ Towns, nations, diplomacy and chunk-by-chunk flag wars, with WorldGuard regions 
 Drop the jar in `plugins/`. Needs Vault + an economy plugin + WorldGuard. HikariCP, SQLite and the MySQL
 driver are downloaded by Paper itself (`libraries:` in plugin.yml), so the jar stays small.
 Edit `plugins/Bannerlands/config.yml` (worlds, prices, progression items, flag war tuning).
+When you update the plugin, keys that are new in the bundled config are added to your existing config.yml automatically on start-up
+(text patch: your values, comments and formatting are never touched; the old file is saved as `config.yml.bak` first).
 
 ## Commands
 /town  map | create | claim | unclaim | info | add | bonus | join | leave | kick | rank | trust | untrust | perms (GUI)

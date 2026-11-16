@@ -27,9 +27,39 @@ public final class BannerlandsPlugin extends JavaPlugin {
     private FlagWarManager wars;
     private Access access;
 
+    /**
+     * Adds config keys that newer versions introduced but the server's existing config.yml doesn't have yet.
+     * Text-based: existing lines/comments are never touched, a backup (config.yml.bak) is written first and the result
+     * is validated as YAML before it replaces the file. Returns true if the file was changed.
+     */
+    private boolean patchConfig() {
+        java.io.File file = new java.io.File(getDataFolder(), "config.yml");
+        if (!file.exists()) return false;
+        try (java.io.InputStream in = getResource("config.yml")) {
+            if (in == null) return false;
+            String defaults = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            String current = java.nio.file.Files.readString(file.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+            java.util.List<String> added = new java.util.ArrayList<>();
+            java.util.List<String> patched = dev.bannerlands.util.ConfigPatcher.patch(
+                    dev.bannerlands.util.ConfigPatcher.split(current), dev.bannerlands.util.ConfigPatcher.split(defaults), added);
+            if (added.isEmpty()) return false;
+            String result = String.join(current.contains("\r\n") ? "\r\n" : "\n", patched);
+            new org.bukkit.configuration.file.YamlConfiguration().loadFromString(result);   // throws if we produced invalid YAML
+            java.nio.file.Files.copy(file.toPath(), new java.io.File(getDataFolder(), "config.yml.bak").toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            java.nio.file.Files.writeString(file.toPath(), result, java.nio.charset.StandardCharsets.UTF_8);
+            getLogger().info("config.yml updated, added missing keys: " + String.join(", ", added) + " (backup: config.yml.bak)");
+            return true;
+        } catch (Exception ex) {
+            getLogger().warning("Could not add missing keys to config.yml (defaults are used instead): " + ex.getMessage());
+            return false;
+        }
+    }
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        if (patchConfig()) reloadConfig();
         Lang.load(this);
         economy = new EconomyManager(this);
         database = new Database(this);
