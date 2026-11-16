@@ -19,6 +19,29 @@ public final class ConfigPatcher {
 
     private static final Pattern KEY = Pattern.compile("^(\\s*)(\"[^\"]*\"|'[^']*'|[^\\s#\\-][^:#]*?)\\s*:(\\s.*|)$");
 
+    private static final Pattern VER = Pattern.compile("^ver\\s*:\\s*(\\d{1,9})(.*)$");
+
+    /** Value of the top-level "ver:" key, 0 if the file has none. */
+    public static int readVersion(List<String> lines) {
+        for (String l : lines) {
+            Matcher m = VER.matcher(l);
+            if (m.matches()) return Integer.parseInt(m.group(1));
+        }
+        return 0;
+    }
+
+    /** Rewrites the number of the "ver:" line (its trailing comment stays). @return true if the line changed */
+    public static boolean setVersion(List<String> lines, int ver) {
+        for (int i = 0; i < lines.size(); i++) {
+            Matcher m = VER.matcher(lines.get(i));
+            if (!m.matches()) continue;
+            if (Integer.parseInt(m.group(1)) == ver) return false;
+            lines.set(i, "ver: " + ver + m.group(2));
+            return true;
+        }
+        return false;
+    }
+
     public static List<String> split(String text) { return new ArrayList<>(Arrays.asList(text.split("\r?\n", -1))); }
 
     private static boolean blankOrComment(String l) { String t = l.trim(); return t.isEmpty() || t.startsWith("#"); }
@@ -93,6 +116,19 @@ public final class ConfigPatcher {
         int lastReal = live.size();
         while (lastReal > 0 && live.get(lastReal - 1).isBlank()) lastReal--;
 
+        // New top-level sections go in front of the "ver:" line (and the comment lines that belong to it), not after it
+        int topAt = lastReal;
+        boolean beforeVer = false, blankBeforeVer = false;
+        Node verNode = liveBy.get("ver");
+        if (verNode != null && verNode.indent() == 0) {
+            int t = verNode.start();
+            while (t > 0 && live.get(t - 1).trim().startsWith("#")) t--;
+            blankBeforeVer = t > 0 && live.get(t - 1).isBlank();
+            while (t > 0 && live.get(t - 1).isBlank()) t--;
+            topAt = t;
+            beforeVer = true;
+        }
+
         for (Node d : defNodes) {
             if (liveBy.containsKey(d.path())) continue;
             String parent = parentPath(d.path());
@@ -106,7 +142,7 @@ public final class ConfigPatcher {
             int target, at;
             if (liveParent == null) {
                 target = 0;
-                at = lastReal;
+                at = topAt;
             } else {
                 Node defParent = defBy.get(parent);
                 int sibling = -1;
@@ -124,10 +160,14 @@ public final class ConfigPatcher {
         List<String> out = new ArrayList<>(live);
         for (Map.Entry<Integer, List<List<String>>> e : inserts.descendingMap().entrySet()) {
             List<String> add = new ArrayList<>();
-            for (List<String> block : e.getValue()) {
-                if (e.getKey() == lastReal && !block.isEmpty() && !isNested(block)) add.add("");   // blank line before a new top-level section
+            List<List<String>> blocks = new ArrayList<>(e.getValue());
+            blocks.sort((x, y) -> Boolean.compare(isNested(y), isNested(x)));   // blocks inside a section first (stable)
+            boolean top = false;
+            for (List<String> block : blocks) {
+                if (!block.isEmpty() && !isNested(block)) { add.add(""); top = true; }   // blank line before a new top-level section
                 add.addAll(block);
             }
+            if (top && beforeVer && !blankBeforeVer) add.add("");   // keep "ver:" visually separated
             out.addAll(e.getKey(), add);
         }
         return out;
