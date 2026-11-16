@@ -12,8 +12,15 @@ Edit `plugins/Bannerlands/config.yml` (worlds, prices, progression items, flag w
 
 ## Commands
 /town  map | create | claim | unclaim | info | add | bonus | join | leave | kick | rank | trust | untrust | perms (GUI)
-       desc | promo | friendlyfire | unlock | invite <town> | invites | accept <id> | deny <id> | delete confirm
-/nation create | info | ally | enemy | war | peace | friendlyfire | leave | kick | disband | flag [cancel]
+       desc | promo | friendlyfire | unlock | rename <name> | invite <town> | invites | accept <id> | deny <id> | delete confirm
+/nation create | info | ally | enemy | war | peace | friendlyfire | rename <name> | capital <town> [confirm] | leave | kick | disband | flag [cancel]
+
+`/town rename` = mayor renames the town. `/nation rename` = king renames the nation. `/nation capital <town>` = king moves the
+capital to another town of the nation (the king does not change). `/nation king <player>` offers the crown to an online member of
+the nation; they answer with the chat buttons or `/nation kingaccept` / `/nation kingdeny` (offer expires after 5 minutes).
+The king is stored per nation, independent of who owns the capital. Nations from older saves start with the owner of their capital as king.
+Renaming (town / nation), moving the capital and handing over the crown each have a cooldown (default 24 h, per town / nation,
+kept across restarts) - see `cooldowns:` in config.yml. Optional prices: `towns.rename-cost`, `nations.rename-cost`.
 
 Multi-town owners: commands act on the town you are standing in (if you belong to it), otherwise your oldest town.
 

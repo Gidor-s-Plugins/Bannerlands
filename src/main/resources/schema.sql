@@ -71,3 +71,13 @@ CREATE TABLE IF NOT EXISTS player_profiles (
   town_slots INT NOT NULL DEFAULT 1,
   last_seen BIGINT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS nation_kings (
+  nation_id BIGINT NOT NULL PRIMARY KEY,
+  uuid CHAR(36) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cooldowns (
+  cd_key VARCHAR(64) NOT NULL PRIMARY KEY,
+  last_used BIGINT NOT NULL
+);

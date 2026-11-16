@@ -18,6 +18,7 @@ towns:
   claims-per-member: 0      # the mayor counts as one member, 0 = off
   starting-slots: 1          # town slots a new player starts with
   create-cost: 2500.0
+  rename-cost: 0.0         # price of /town rename
   claim-cost: 500.0
   unclaim-refund: 0.0
   base-claims: 25            # every town starts with this
@@ -39,8 +40,15 @@ progression:
       money: 50000.0
       items: ["SUGAR_CANE:512", "IRON_INGOT:256", "DIAMOND:16"] # this will be taken from the inventory of the creator (can be empty)
 
+cooldowns:               # hours between uses, per town / nation (0 = no cooldown)
+  town-rename-hours: 24
+  nation-rename-hours: 24
+  capital-hours: 24
+  king-hours: 24
+
 nations:
   create-cost: 5000.0
+  rename-cost: 0.0         # price of /nation rename
   invite-expire-hours: 72
   claim-bonus: 10        # extra chunks every town in a nation may claim
 
@@ -63,4 +71,4 @@ flagwar:
 # Language file to use (lang/<code>.yml in the plugin folder)
 language: en
 
-ver: 1 # dont change this
+ver: 2 # dont change this

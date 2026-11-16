@@ -29,7 +29,7 @@ public final class TownCommand implements TabExecutor {
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
     private static final List<String> SUBS = List.of("map","create", "delete", "claim", "unclaim", "info", "add", "join", "leave",
             "kick", "rank", "trust", "untrust", "perms", "desc", "promo", "friendlyfire", "unlock", "bonus", "invite", "accept",
-            "deny", "invites", "help");
+            "deny", "invites", "rename", "help");
 
     private final BannerlandsPlugin plugin;
     private final DataManager data;
@@ -69,6 +69,7 @@ public final class TownCommand implements TabExecutor {
             case "accept" -> respond(p, a, true);
             case "deny" -> respond(p, a, false);
             case "invites" -> listInvites(p);
+            case "rename" -> rename(p, a);
             case "reload" -> reload(p);
             default -> help(p);
         }
@@ -128,7 +129,7 @@ public final class TownCommand implements TabExecutor {
                 "map" ,"create <name>", "claim / unclaim", "info [town]", "add <player> / join <town> / leave / kick <player>",
                 "rank <player> <mayor|member>", "trust|untrust <player>", "perms  (opens the GUI)",
                 "desc <text> / promo <text>", "friendlyfire", "unlock", "bonus <count>", "invite <town>  (nation invite)",
-                "invites / accept <id> / deny <id>", "delete confirm"}) {
+                "invites / accept <id> / deny <id>", "rename <name>  (mayor)", "delete confirm"}) {
             p.sendMessage(Msg.raw("town.town", Msg.p("l", l)));
         }
     }
@@ -208,6 +209,11 @@ public final class TownCommand implements TabExecutor {
     private void delete(Player p, String[] a) {
         Town t = needRole(p, Role.MAYOR);
         if (t == null) return;
+        Nation capOf = data.nation(t.getNationId());
+        if (capOf != null && capOf.getCapitalTownId() == t.getId() && !p.getUniqueId().equals(capOf.getKing())) {
+            Msg.send(p, "town.delete_capital_not_king", Msg.p("t", t.getName()));
+            return;
+        }
         if (a.length < 2 || !a[1].equalsIgnoreCase("confirm")) {
             Msg.send(p, "town.this_permanently_deletes_and", Msg.p("t", t.getName()));
             return;
@@ -528,22 +534,11 @@ public final class TownCommand implements TabExecutor {
     private void invite(Player p, String[] a) {
         if (a.length < 2) { usage(p, "/town invite <townName>"); return; }
 
-        // Find a town owned/managed by the player that is a Nation Capital
-        Town capitalTown = data.towns.values().stream()
-                .filter(t -> t.getOwner().equals(p.getUniqueId()))
-                .filter(t -> {
-                    Nation n = data.nation(t.getNationId());
-                    return n != null && n.getCapitalTownId() == t.getId();
-                })
-                .findFirst()
-                .orElse(null);
-
-        if (capitalTown == null) {
+        Nation n = data.kingNation(p);
+        if (n == null) {
             Msg.send(p, "town.only_the_king_of");
             return;
         }
-
-        Nation n = data.nation(capitalTown.getNationId());
         Town target = data.townByName(a[1]);
         if (target == null) { Msg.send(p, "town.no_such_town"); return; }
 
@@ -552,6 +547,40 @@ public final class TownCommand implements TabExecutor {
 
         boolean online = Bukkit.getPlayer(target.getOwner()) != null;
         Msg.send(p, online ? "town.invite_sent" : "town.invite_queued", Msg.p("t", target.getName()));
+    }
+
+    /** /town rename <name>: the mayor renames the town they are standing in / their active town. */
+    private void rename(Player p, String[] a) {
+        if (a.length < 2) { usage(p, "/town rename <name>"); return; }
+        Town t = needRole(p, Role.MAYOR);
+        if (t == null) return;
+        String name = a[1];
+        if (!NAME.matcher(name).matches()) { Msg.send(p, "town.names_must_be_3"); return; }
+        if (name.equals(t.getName())) { Msg.send(p, "town.rename_same"); return; }
+        Town clash = data.townByName(name);
+        if (clash != null && clash.getId() != t.getId()) { Msg.send(p, "town.that_name_is_taken"); return; }
+        String cdKey = "town_rename:" + t.getId();
+        long left = data.cooldownLeft(cdKey, plugin.getConfig().getDouble("cooldowns.town-rename-hours", 24));
+        if (left > 0) { Msg.send(p, "town.cooldown", Msg.p("t", Msg.duration(left))); return; }
+        double fee = plugin.getConfig().getDouble("towns.rename-cost", 0);
+        if (!plugin.economy().withdraw(p, fee)) {
+            Msg.send(p, "town.rename_need_money", Msg.p("m", plugin.economy().format(fee)));
+            return;
+        }
+        String old = t.getName();
+        data.renameTown(t, name);
+        data.markCooldown(cdKey);
+        Msg.send(p, "town.renamed", Msg.p("o", old), Msg.p("t", name));
+        // tell everyone else: the nation (if any) gets the nation wording, otherwise just the town
+        Set<UUID> sent = new HashSet<>();
+        sent.add(p.getUniqueId());
+        Nation n = data.nation(t.getNationId());
+        data.broadcastTown(Msg.c("town.renamed_notice", Msg.p("o", old), Msg.p("t", name)), t, sent);
+        if (n != null) {
+            for (long tid : n.getTowns()) {
+                data.broadcastTown(Msg.c("town.renamed_notice_nation", Msg.p("o", old), Msg.p("t", name)), data.town(tid), sent);
+            }
+        }
     }
 
     private void respond(Player p, String[] a, boolean accept) {

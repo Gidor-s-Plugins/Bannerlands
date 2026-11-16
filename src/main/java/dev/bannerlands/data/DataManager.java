@@ -30,6 +30,9 @@ public final class DataManager {
     /** from-nation -> (to-nation -> directed relation). Only ALLY/ENEMY/WAR are stored. */
     private final Map<Long, Map<Long, Relation>> relations = new ConcurrentHashMap<>();
 
+    /** cooldown key -> last time the action was used (millis). Persisted in the cooldowns table. */
+    private final Map<String, Long> cooldowns = new ConcurrentHashMap<>();
+
     private final AtomicLong townSeq = new AtomicLong(), nationSeq = new AtomicLong(), inviteSeq = new AtomicLong();
 
     public DataManager(BannerlandsPlugin plugin, Database db) { this.plugin = plugin; this.db = db; }
@@ -70,6 +73,19 @@ public final class DataManager {
             Nation n = nations.get(t.getNationId());
             if (n != null) n.getTowns().add(t.getId()); else t.setNationId(0);
         }
+        // Kings: nations saved before kings existed have no row -> the owner of the capital town is the king (old behaviour).
+        Map<Long, UUID> savedKings = new HashMap<>();
+        db.each("SELECT * FROM nation_kings", rs -> savedKings.put(rs.getLong("nation_id"), UUID.fromString(rs.getString("uuid"))));
+        for (Nation n : nations.values()) {
+            UUID k = savedKings.get(n.getId());
+            if (k == null) {
+                Town cap = towns.get(n.getCapitalTownId());
+                if (cap != null) k = cap.getOwner();
+            }
+            n.setKing(k);
+            if (k != null && !savedKings.containsKey(n.getId())) saveKing(n);
+        }
+        db.each("SELECT * FROM cooldowns", rs -> cooldowns.put(rs.getString("cd_key"), rs.getLong("last_used")));
         db.each("SELECT * FROM nation_relations", rs ->
                 relations.computeIfAbsent(rs.getLong("from_nation"), k -> new ConcurrentHashMap<>())
                         .put(rs.getLong("to_nation"), Relation.valueOf(rs.getString("type"))));
@@ -227,6 +243,11 @@ public final class DataManager {
                 n.getId(), n.getName(), n.getCapitalTownId(), n.isFriendlyFire(), n.getCreatedAt());
     }
 
+    public void saveKing(Nation n) {
+        if (n.getKing() == null) return;
+        db.update("REPLACE INTO nation_kings (nation_id,uuid) VALUES (?,?)", n.getId(), n.getKing());
+    }
+
     public void saveClaim(ClaimedChunk c) {
         db.update("REPLACE INTO chunk_claims (world,chunk_x,chunk_z,town_id,claimed_at,raided_until,raider_nation,last_siege) VALUES (?,?,?,?,?,?,?,?)",
                 c.getKey().world(), c.getKey().x(), c.getKey().z(), c.getTownId(), c.getClaimedAt(),
@@ -282,6 +303,7 @@ public final class DataManager {
         towns.remove(t.getId());
         townNames.remove(t.getName().toLowerCase(Locale.ROOT));
         db.update("DELETE FROM towns WHERE id=?", t.getId());
+        clearCooldown("town_rename:" + t.getId());
         db.update("DELETE FROM town_members WHERE town_id=?", t.getId());
         db.update("DELETE FROM town_trusted WHERE town_id=?", t.getId());
     }
@@ -352,7 +374,9 @@ public final class DataManager {
         Nation n = new Nation(nationSeq.incrementAndGet(), name, capital.getId(), System.currentTimeMillis());
         nations.put(n.getId(), n);
         nationNames.put(name.toLowerCase(Locale.ROOT), n);
+        n.setKing(capital.getOwner());
         saveNation(n);
+        saveKing(n);
         setTownNation(capital, n);
         return n;
     }
@@ -380,6 +404,75 @@ public final class DataManager {
         nations.remove(n.getId());
         nationNames.remove(n.getName().toLowerCase(Locale.ROOT));
         db.update("DELETE FROM nations WHERE id=?", n.getId());
+        db.update("DELETE FROM nation_kings WHERE nation_id=?", n.getId());
+        for (String k : new String[]{"nation_rename:", "nation_capital:", "nation_king:"}) clearCooldown(k + n.getId());
+    }
+
+    /** Which nation a king command acts on: the nation of the town you stand in if you lead it, otherwise the oldest nation you lead. */
+    public Nation kingNation(Player p) {
+        UUID u = p.getUniqueId();
+        Town t = activeTown(p);
+        Nation n = t == null ? null : nations.get(t.getNationId());
+        if (n != null && u.equals(n.getKing())) return n;
+        return nations.values().stream().filter(x -> u.equals(x.getKing()))
+                .min(Comparator.comparingLong(Nation::getId)).orElse(null);
+    }
+
+    /** True if the player is a member (any role) of at least one town of the nation. */
+    public boolean isNationMember(Nation n, UUID u) {
+        for (long tid : n.getTowns()) {
+            Town t = towns.get(tid);
+            if (t != null && t.getMembers().containsKey(u)) return true;
+        }
+        return false;
+    }
+
+    public void setKing(Nation n, UUID king) {
+        n.setKing(king);
+        saveKing(n);
+    }
+
+    // ------------------------------------------------------------------ cooldowns
+
+    /** Milliseconds left before the action behind {@code key} may be used again (0 = ready). */
+    public long cooldownLeft(String key, double hours) {
+        Long last = cooldowns.get(key);
+        if (last == null || hours <= 0) return 0;
+        return Math.max(0, last + (long) (hours * 3_600_000L) - System.currentTimeMillis());
+    }
+
+    public void markCooldown(String key) {
+        long now = System.currentTimeMillis();
+        cooldowns.put(key, now);
+        db.update("REPLACE INTO cooldowns (cd_key,last_used) VALUES (?,?)", key, now);
+    }
+
+    private void clearCooldown(String key) {
+        if (cooldowns.remove(key) != null) db.update("DELETE FROM cooldowns WHERE cd_key=?", key);
+    }
+
+    // ------------------------------------------------------------------ renaming / capital
+
+    /** Renames a town and keeps the name index + database in sync. Caller must validate the name first. */
+    public synchronized void renameTown(Town t, String newName) {
+        townNames.remove(t.getName().toLowerCase(Locale.ROOT));
+        t.setName(newName);
+        townNames.put(newName.toLowerCase(Locale.ROOT), t);
+        saveTown(t);
+    }
+
+    /** Renames a nation and keeps the name index + database in sync. Caller must validate the name first. */
+    public synchronized void renameNation(Nation n, String newName) {
+        nationNames.remove(n.getName().toLowerCase(Locale.ROOT));
+        n.setName(newName);
+        nationNames.put(newName.toLowerCase(Locale.ROOT), n);
+        saveNation(n);
+    }
+
+    /** Moves the capital of a nation to another town of that nation. */
+    public void setCapital(Nation n, Town capital) {
+        n.setCapitalTownId(capital.getId());
+        saveNation(n);
     }
 
     // ------------------------------------------------------------------ invites

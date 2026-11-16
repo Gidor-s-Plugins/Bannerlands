@@ -5,6 +5,8 @@ import dev.bannerlands.util.Lang;
 import dev.bannerlands.data.DataManager;
 import dev.bannerlands.model.*;
 import dev.bannerlands.util.Msg;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -12,19 +14,24 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 public final class NationCommand implements TabExecutor {
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
     private static final List<String> SUBS = List.of("create", "info", "ally", "enemy", "war", "peace", "friendlyfire",
-            "leave", "kick", "disband", "flag", "help");
+            "leave", "kick", "disband", "flag", "rename", "capital", "king", "kingaccept", "kingdeny", "help");
 
     private final BannerlandsPlugin plugin;
     private final DataManager data;
+    /** new king (target) -> pending offer from the current king */
+    private final Map<UUID, KingOffer> kingOffers = new ConcurrentHashMap<>();
 
     public NationCommand(BannerlandsPlugin plugin) { this.plugin = plugin; this.data = plugin.data(); }
 
+    /** {@code town} is the capital of {@code nation}. */
     private record Ctx(Town town, Nation nation) { }
+    private record KingOffer(long nationId, UUID from, long expires) { }
 
     @Override
     public boolean onCommand(CommandSender s, Command cmd, String label, String[] a) {
@@ -41,6 +48,11 @@ public final class NationCommand implements TabExecutor {
             case "leave" -> leave(p);
             case "kick" -> kick(p, a);
             case "disband" -> disband(p, a);
+            case "rename" -> rename(p, a);
+            case "capital", "setcapital" -> capital(p, a);
+            case "king" -> king(p, a);
+            case "kingaccept" -> kingAccept(p);
+            case "kingdeny" -> kingDeny(p);
             case "flag", "siege" -> flag(p, a);
             default -> help(p);
         }
@@ -53,23 +65,30 @@ public final class NationCommand implements TabExecutor {
         Msg.send(p, "nation.nation_commands");
         for (String l : new String[]{"create <name>", "info [nation]", "ally <nation>", "enemy <nation>", "war <nation>",
                 "peace <nation>", "flag  (start a siege on the chunk you stand in)", "flag cancel", "friendlyfire",
-                "leave / kick <town> / disband confirm", "(invite towns with /town invite <town>)"}) {
+                "rename <name>  (king)", "capital <town>  (king: move the capital)", "king <player> / kingaccept / kingdeny  (hand over the crown)", "leave / kick <town> / disband confirm", "(invite towns with /town invite <town>)"}) {
             p.sendMessage(Msg.raw("nation.nation", Msg.p("l", l)));
         }
     }
 
-    /** The player must be king of their nation's capital. */
+    /** The player must be the king of a nation (the king is set per nation and is independent from the capital's owner). */
     private Ctx leader(Player p) {
-        Town t = data.activeTown(p);
-        if (t == null) { Msg.send(p, "nation.you_aren_t_in"); return null; }
-        Nation n = data.nation(t.getNationId());
-        if (n == null) { Msg.send(p, "nation.isn_t_in_a", Msg.p("t", t.getName())); return null; }
-        if (!t.getOwner().equals(p.getUniqueId()) || n.getCapitalTownId() != t.getId()) {
-            Msg.send(p, "nation.only_the_king_of",
-                    Msg.p("c", Optional.ofNullable(data.town(n.getCapitalTownId())).map(Town::getName).orElse("?")));
+        Nation n = data.kingNation(p);
+        if (n == null) {
+            Town t = data.activeTown(p);
+            if (t == null) Msg.send(p, "nation.you_aren_t_in");
+            else if (data.nation(t.getNationId()) == null) Msg.send(p, "nation.isn_t_in_a", Msg.p("t", t.getName()));
+            else Msg.send(p, "nation.only_the_king_of");
             return null;
         }
-        return new Ctx(t, n);
+        return new Ctx(data.town(n.getCapitalTownId()), n);
+    }
+
+    /** Sends the cooldown message and returns true if the action is still cooling down. */
+    private boolean onCooldown(Player p, String key, String configPath) {
+        long left = data.cooldownLeft(key, plugin.getConfig().getDouble(configPath, 24));
+        if (left <= 0) return false;
+        Msg.send(p, "nation.cooldown", Msg.p("t", Msg.duration(left)));
+        return true;
     }
 
     private void create(Player p, String[] a) {
@@ -139,7 +158,7 @@ public final class NationCommand implements TabExecutor {
                 } else {
                     Msg.send(p, "nation.alliance_request_sent_must",
                             Msg.p("n", target.getName()), Msg.p("me", c.nation().getName()));
-                    Player theirKing = Optional.ofNullable(data.town(target.getCapitalTownId())).map(t -> Bukkit.getPlayer(t.getOwner())).orElse(null);
+                    Player theirKing = target.getKing() == null ? null : Bukkit.getPlayer(target.getKing());
                     if (theirKing != null) Msg.send(theirKing, "nation.proposes_an_alliance_accept", Msg.p("n", c.nation().getName()));
                 }
             }
@@ -192,6 +211,100 @@ public final class NationCommand implements TabExecutor {
                 Msg.p("n", c.nation().getName()), Msg.p("v", Lang.onOff(c.nation().isFriendlyFire())));
     }
 
+    /** /nation rename <name>: the king renames the nation. */
+    private void rename(Player p, String[] a) {
+        if (a.length < 2) { usage(p, "/nation rename <name>"); return; }
+        Ctx c = leader(p);
+        if (c == null) return;
+        String name = a[1];
+        if (!NAME.matcher(name).matches()) { Msg.send(p, "nation.names_must_be_3"); return; }
+        if (name.equals(c.nation().getName())) { Msg.send(p, "nation.rename_same"); return; }
+        Nation clash = data.nationByName(name);
+        if (clash != null && clash.getId() != c.nation().getId()) { Msg.send(p, "nation.that_name_is_taken"); return; }
+        String cdKey = "nation_rename:" + c.nation().getId();
+        if (onCooldown(p, cdKey, "cooldowns.nation-rename-hours")) return;
+        double fee = plugin.getConfig().getDouble("nations.rename-cost", 0);
+        if (!plugin.economy().withdraw(p, fee)) {
+            Msg.send(p, "nation.rename_need_money", Msg.p("m", plugin.economy().format(fee)));
+            return;
+        }
+        String old = c.nation().getName();
+        data.renameNation(c.nation(), name);
+        data.markCooldown(cdKey);
+        Msg.send(p, "nation.renamed", Msg.p("o", old), Msg.p("n", name));
+        Set<UUID> sent = new HashSet<>();
+        sent.add(p.getUniqueId());
+        for (long tid : c.nation().getTowns()) {
+            data.broadcastTown(Msg.c("nation.renamed_notice", Msg.p("o", old), Msg.p("n", name)), data.town(tid), sent);
+        }
+    }
+
+    /** /nation capital <town>: the king moves the capital to another town of the nation. The king does not change. */
+    private void capital(Player p, String[] a) {
+        if (a.length < 2) { usage(p, "/nation capital <town>"); return; }
+        Ctx c = leader(p);
+        if (c == null) return;
+        Town target = data.townByName(a[1]);
+        if (target == null || target.getNationId() != c.nation().getId()) { Msg.send(p, "nation.capital_not_member"); return; }
+        if (target.getId() == c.nation().getCapitalTownId()) { Msg.send(p, "nation.capital_already"); return; }
+        String cdKey = "nation_capital:" + c.nation().getId();
+        if (onCooldown(p, cdKey, "cooldowns.capital-hours")) return;
+        data.setCapital(c.nation(), target);
+        data.markCooldown(cdKey);
+        data.broadcastNations(Msg.c("nation.capital_moved",
+                Msg.p("n", c.nation().getName()), Msg.p("t", target.getName())), c.nation().getId());
+    }
+
+    /** /nation king <player>: offer the crown to an online member of the nation; they must accept. */
+    private void king(Player p, String[] a) {
+        if (a.length < 2) { usage(p, "/nation king <player>"); return; }
+        Ctx c = leader(p);
+        if (c == null) return;
+        Player target = Bukkit.getPlayerExact(a[1]);
+        if (target == null) { Msg.send(p, "nation.king_target_offline"); return; }
+        if (target.getUniqueId().equals(p.getUniqueId())) { Msg.send(p, "nation.king_self"); return; }
+        if (!data.isNationMember(c.nation(), target.getUniqueId())) { Msg.send(p, "nation.king_not_member", Msg.p("p", target.getName())); return; }
+        if (onCooldown(p, "nation_king:" + c.nation().getId(), "cooldowns.king-hours")) return;
+        long now = System.currentTimeMillis();
+        kingOffers.values().removeIf(o -> o.expires() < now);
+        kingOffers.put(target.getUniqueId(), new KingOffer(c.nation().getId(), p.getUniqueId(), now + 300_000L));
+        Msg.send(p, "nation.king_offer_sent", Msg.p("p", target.getName()), Msg.p("n", c.nation().getName()));
+        Component accept = Msg.raw("nation.btn_king_accept").clickEvent(ClickEvent.runCommand("/nation kingaccept"));
+        Component deny = Msg.raw("nation.btn_king_deny").clickEvent(ClickEvent.runCommand("/nation kingdeny"));
+        target.sendMessage(Msg.c("nation.king_offer", Msg.p("p", p.getName()), Msg.p("n", c.nation().getName())));
+        target.sendMessage(Component.text("   ").append(accept).append(Component.text("  ")).append(deny));
+    }
+
+    private void kingAccept(Player p) {
+        KingOffer o = kingOffers.remove(p.getUniqueId());
+        if (o == null || o.expires() < System.currentTimeMillis()) { Msg.send(p, "nation.king_no_offer"); return; }
+        Nation n = data.nation(o.nationId());
+        // re-check everything: the world may have changed while the offer was open
+        if (n == null || !o.from().equals(n.getKing()) || !data.isNationMember(n, p.getUniqueId())) {
+            Msg.send(p, "nation.king_offer_invalid");
+            return;
+        }
+        String cdKey = "nation_king:" + n.getId();
+        if (onCooldown(p, cdKey, "cooldowns.king-hours")) return;
+        data.setKing(n, p.getUniqueId());
+        data.markCooldown(cdKey);
+        Component msg = Msg.c("nation.king_changed", Msg.p("n", n.getName()), Msg.p("p", p.getName()));
+        Set<UUID> sent = new HashSet<>();
+        for (long tid : n.getTowns()) data.broadcastTown(msg, data.town(tid), sent);
+        Player oldKing = Bukkit.getPlayer(o.from());
+        if (oldKing != null && sent.add(oldKing.getUniqueId())) oldKing.sendMessage(msg);
+        if (sent.add(p.getUniqueId())) p.sendMessage(msg);
+    }
+
+    private void kingDeny(Player p) {
+        KingOffer o = kingOffers.remove(p.getUniqueId());
+        if (o == null || o.expires() < System.currentTimeMillis()) { Msg.send(p, "nation.king_no_offer"); return; }
+        Nation n = data.nation(o.nationId());
+        Msg.send(p, "nation.king_declined_you", Msg.p("n", n == null ? "?" : n.getName()));
+        Player from = Bukkit.getPlayer(o.from());
+        if (from != null) Msg.send(from, "nation.king_declined", Msg.p("p", p.getName()));
+    }
+
     private void leave(Player p) {
         Town t = data.activeTown(p);
         if (t == null || !t.getOwner().equals(p.getUniqueId())) { Msg.send(p, "nation.only_a_town_s"); return; }
@@ -209,7 +322,7 @@ public final class NationCommand implements TabExecutor {
         Ctx c = leader(p);
         if (c == null) return;
         Town t = data.townByName(a[1]);
-        if (t == null || t.getNationId() != c.nation().getId() || t.getId() == c.town().getId()) { Msg.send(p, "nation.that_town_isn_t"); return; }
+        if (t == null || t.getNationId() != c.nation().getId() || t.getId() == c.nation().getCapitalTownId()) { Msg.send(p, "nation.that_town_isn_t"); return; }
         plugin.wars().cancelTown(t.getId());
         data.setTownNation(t, null);
         data.broadcastNations(Msg.c("nation.was_removed_from_the", Msg.p("t", t.getName())), c.nation().getId());
@@ -240,6 +353,14 @@ public final class NationCommand implements TabExecutor {
             switch (a[0].toLowerCase(Locale.ROOT)) {
                 case "info", "ally", "enemy", "war", "peace" -> { return TownCommand.filter(data.nations.values().stream().map(Nation::getName).toList(), a[1]); }
                 case "kick" -> { return TownCommand.filter(data.towns.values().stream().map(Town::getName).toList(), a[1]); }
+                case "capital", "setcapital" -> {
+                    if (!(s instanceof Player p)) return List.of();
+                    Town t = data.activeTown(p);
+                    Nation n = t == null ? null : data.nation(t.getNationId());
+                    if (n == null) return List.of();
+                    return TownCommand.filter(n.getTowns().stream().map(data::town).filter(Objects::nonNull).map(Town::getName).toList(), a[1]);
+                }
+                case "king" -> { return TownCommand.filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), a[1]); }
                 case "flag", "siege" -> { return TownCommand.filter(List.of("cancel"), a[1]); }
                 default -> { return List.of(); }
             }

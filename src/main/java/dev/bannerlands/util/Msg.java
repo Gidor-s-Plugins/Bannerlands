@@ -20,4 +20,13 @@ public final class Msg {
 
     /** User-supplied values always go through unparsed placeholders so players can't inject MiniMessage tags. */
     public static TagResolver p(String key, Object value) { return Placeholder.unparsed(key, String.valueOf(value)); }
+
+    /** "5h 12m" / "12m 30s" / "30s" for cooldown messages. */
+    public static String duration(long ms) {
+        long s = Math.max(1, (ms + 999) / 1000);
+        long h = s / 3600, m = (s % 3600) / 60, sec = s % 60;
+        if (h > 0) return h + "h " + m + "m";
+        if (m > 0) return m + "m " + sec + "s";
+        return sec + "s";
+    }
 }
